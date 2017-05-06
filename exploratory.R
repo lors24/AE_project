@@ -9,12 +9,14 @@ library(chron)
 library(ggmap)
 library(tm) #text mining
 library(SnowballC)
+library(tau)
+library(tidyr)
 
 
 #Read data
 
 scores <- read.csv("Data/scores.csv", as.is = T, na.strings=c("","NA"))
-#programs <- read.csv("Data/DOE_High_School_Programs_2014-2015.csv", as.is = T)
+programs <- read.csv("Data/DOE_High_School_Programs_2014-2015.csv", as.is = T, header = T)
 directory <- read.csv("Data/DOE_High_School_Directory_2014-2015.csv", as.is = T)
 
 
@@ -80,12 +82,16 @@ directory2 <- directory %>%
            New_school = as.numeric(grepl("New",school_type)),
            International_school = as.numeric(grepl("International",school_type)),
            Specialized_school = as.numeric(grepl("Specialized", school_type)),
-           P_tech = as.numeric(grepl("P-Tech", school_type))
+           P_tech = as.numeric(grepl("P-Tech", school_type)),
+           ESL_dual = as.numeric(grepl(pattern = "Dual",x = directory$ell_programs)),
+           ESL_transitional = as.numeric(grepl(pattern = "Transitional",x = directory$ell_programs))
            ) %>%
-    select(-c(boro, school_name, building_code, phone_number, fax_number,
+    select(-c(dbn, boro, school_name, building_code, phone_number, fax_number,
+              campus_name, 
               expgrade_span_min, expgrade_span_max, state_code, zip, city, school_accessibility_description,
               website, primary_address_line_1, school_type,
-              se_services, start_time, end_time))
+              se_services, start_time, end_time, ell_programs,
+              priority01:priority10, Location.1))
 
 
 #First model
@@ -111,27 +117,65 @@ mapPoints
 
 #Text analytics
 
-# Step 1: Convert our text to a corpus
-corpus = Corpus(VectorSource(directory$overview_paragraph))
+clean_text <- function(variable, words.remove = "school"){
+    # Step 1: Convert our text to a corpus
+    corpus = Corpus(VectorSource(variable))
+    
+    # Step 2: Change all the text to lower case.
+    corpus = tm_map(corpus, tolower)
+    
+    # Step 3: Remove all punctuation.
+    corpus = tm_map(corpus, removePunctuation)
+    
+    # Step 4: Remove stop words.  
+    corpus = tm_map(corpus, removeWords, c(words.remove, stopwords("english")))
+    
+    # Step 5: Stem our document 
+    corpus = tm_map(corpus, stemDocument)
+    
+    # Step 6: Create a word count matrix (rows are emails, columns are words)
+    #dtm = DocumentTermMatrix(corpus)
+    matrix <- DocumentTermMatrix(corpus,control=list(tokenize=tokenize_ngrams))
+    
+    return(matrix)
+}
 
-# Step 2: Change all the text to lower case.
-corpus = tm_map(corpus, tolower)
+#Languages
 
-# Step 3: Remove all punctuation.
-corpus = tm_map(corpus, removePunctuation)
+directory$language_classes <- gsub("\\s*\\([^\\)]+\\)","",as.character(directory2$language_classes))
+languages <- clean_text(directory$language_classes, c("language","arts")) 
+findFreqTerms(languages, lowfreq=25)
+s_languages = removeSparseTerms(languages, 0.90)
+text = as.data.frame(as.matrix(s_languages))
 
-# Step 4: Remove stop words.  
-corpus = tm_map(corpus, removeWords, c("high", "school", "students",stopwords("english")))
+#Extra curricular activites
 
-# Step 5: Stem our document 
-corpus = tm_map(corpus, stemDocument)
+#directory$extracurricular_activities <- gsub("\\s*\\([^\\)]+\\)","",as.character(directory2$language_classes))
+extraCurricular <- clean_text(directory$extracurricular_activities)
+findFreqTerms(extraCurricular, lowfreq=25)
+s_extraCurricular = removeSparseTerms(extraCurricular, 0.75)
+text = as.data.frame(as.matrix(s_extraCurricular))
 
-# Step 6: Create a word count matrix (rows are emails, columns are words)
-dtm = DocumentTermMatrix(corpus)
+tokenize_ngrams <- function(x, n=3) 
+    return(rownames(as.data.frame(unclass(textcnt(x,method="string",n=n)))))
+matrix <- DocumentTermMatrix(corpus,control=list(tokenize=tokenize_ngrams))
+
+#additional
+
+addInfo <- clean_text(directory$overview_paragraph)
+findFreqTerms(addInfo, lowfreq=50)
+aux = removeSparseTerms(addInfo, .90)
+text = as.data.frame(as.matrix(addInfo))
 
 
-findFreqTerms(dtm, lowfreq=100)
+#### PROGRAMS ####
 
-textSparse = as.data.frame(as.matrix(dtm))
+# Number of programs is accurate
 
-spdtm = removeSparseTerms(dtm, 0.95)
+program_number <- programs %>%
+    filter(dbn != 'dbn') %>%
+    group_by(dbn, interest) %>%
+    summarise(number = n()) %>%
+    spread(interest, number)
+
+program_number[is.na(program_number)] <- 0
