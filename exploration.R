@@ -4,7 +4,11 @@ library(stringr)
 library(caret)
 library(class)
 library(klaR)
+library(tidyr)
 library(ggplot2)
+library(RColorBrewer)
+library(psych)
+library(corrplot)
 set.seed(123)
 
 clean_data <- read_csv("~/Dropbox (Personal)/MIT/15.071AnalyticsEdge/Data/cleaned_data.csv")
@@ -101,6 +105,26 @@ data_additional_variables <- scores %>%
   mutate(total.score = sum(Average.Score..SAT.Math., Average.Score..SAT.Reading., Average.Score..SAT.Writing.))
 
 write.csv(data_additional_variables, '~/Dropbox (Personal)/MIT/15.071AnalyticsEdge/Data/data_additional_variables.csv')
+# PRELIMINARY ANALYSIS -------------------------------
+hist.data <- subset %>%
+  dplyr::select(Percent.Hispanic, Percent.Other, Percent.Tested, Average.Score..SAT.Math., Average.Score..SAT.Reading.,
+                Average.Score..SAT.Writing., average.sum.sat)
+
+multi.hist(hist.data[,sapply(hist.data, is.numeric)])
+
+hist.data.1 <- subset %>%
+  mutate( total.sport = num_boy_sport + num_girl_sport + num_coed_sport) %>%
+  dplyr::select(num_ap, number_programs, num_boy_sport, num_girl_sport, num_coed_sport, total.sport)
+
+multi.hist(hist.data.1[,sapply(hist.data.1, is.numeric)])
+
+t <- subset %>%
+  dplyr::select(-subway, -New_school)
+         
+M <- cor(t)
+corrplot(M, type = "upper", tl.pos = "td",
+         method = "square", tl.cex = 0.5, tl.col = 'black', diag = FALSE)
+rm(t)
 
 # CREATE TRAIN AND TEST -------------------------------
 ## 75% of the sample size
@@ -146,24 +170,95 @@ plot(num.clus, withindiff, type="n", main=heading)
 lines(num.clus, withindiff, type='l') 
 
 cluster.results.4 <-kmodes(train[,3:49], 4, iter.max = 10, weighted = FALSE )
-train <- cbind(train, cluster.results.4$cluster )
+train <- cbind(train, cluster = cluster.results.4$cluster )
 #cluster on train and validation data as well 
 c.r.4 <-kmodes(test[,3:49], 4, iter.max = 10, weighted = FALSE )
-test <- cbind(test, c.r.4$cluster )
+test <- cbind(test, cluster = c.r.4$cluster )
 c.r.4 <-kmodes(validate[,3:49], 4, iter.max = 10, weighted = FALSE )
-validate <- cbind(validate, c.r.4$cluster )
+validate <- cbind(validate, cluster = c.r.4$cluster )
 
 table(train$`cluster.results.4$cluster`)
 
-c.1 <- filter(train, cluster.results.4$cluster == 1)
-c.2 <- filter(train, cluster.results.4$cluster == 2)
-c.3 <- filter(train, cluster.results.4$cluster == 3)
-c.4 <- filter(train, cluster.results.4$cluster == 4)
-
 write.csv(train, '~/Dropbox (Personal)/MIT/15.071AnalyticsEdge/Data/train_cluster.csv')
+
+# GRAPHS  -------------------------------
+
+###SCORES
+graph.data <- dplyr::select(train, Average.Score..SAT.Reading., Average.Score..SAT.Math.,
+                            Average.Score..SAT.Writing., average.sum.sat, cluster ) %>%
+  group_by(cluster) %>%
+  summarise(average.reading = mean(Average.Score..SAT.Reading.),
+            average.math = mean(Average.Score..SAT.Math.),
+            average.writing = mean(Average.Score..SAT.Writing.),
+            average.total = mean(average.sum.sat)) %>%
+  gather(variable, value, - cluster)
+
+ggplot(graph.data, aes(variable, value)) +   
+  geom_bar(aes(fill = as.factor(cluster)), position = "dodge", stat="identity") +
+  labs(x = "Category", y = "Average Score") +
+  ggtitle("Average Score by Cluster") + 
+  guides(fill=guide_legend(title="Cluster")) + 
+  scale_fill_brewer(palette="GnBu") +
+  theme(axis.text=element_text(size=30, face="bold"),
+        axis.title=element_text(size=22,face="bold"),
+        plot.title = element_text(size = 40, face = "bold"),
+        legend.text = element_text(size=24),
+        legend.title =element_text(size=22,face="bold") ) 
+
+### Ethnicity
+graph.data <- dplyr::select(train, Percent.Hispanic, Percent.White,
+                            Percent.Asian, Percent.Black, cluster ) %>%
+  group_by(cluster) %>%
+  summarise(percent.hispanic = mean(Percent.Hispanic),
+            percent.white = mean(Percent.White),
+            percent.asian = mean(Percent.Asian),
+            percent.black = mean(Percent.Black)) %>%
+  gather(variable, value, - cluster)
+
+ggplot(graph.data, aes(variable, value)) +   
+  geom_bar(aes(fill = as.factor(cluster)), position = "dodge", stat="identity") +
+  labs(x = "Category", y = "Percentage") +
+  ggtitle("Ethnicities by Cluster") + 
+  guides(fill=guide_legend(title="Cluster")) + 
+  scale_fill_brewer(palette="GnBu") +
+  theme(axis.text=element_text(size=30, face="bold"),
+        axis.title=element_text(size=22,face="bold"),
+        plot.title = element_text(size = 40, face = "bold"),
+        legend.text = element_text(size=24),
+        legend.title =element_text(size=22,face="bold") )
+
+### AP
+graph.data <- dplyr::select(train, num_ap, ap_calculus,ap_spanish,
+                            ap_calculus, ap_english, ap_physics, ap_history,
+                            cluster ) %>%
+  group_by(cluster) %>%
+  summarise(total.ap = mean(num_ap),
+            ap.calculus = mean(ap_calculus),
+            ap.history = mean(ap_history),
+            ap.english = mean(ap_english),
+            ap.physics = mean(ap_physics),
+            ap.spanish = mean(ap_spanish)) %>%
+  gather(variable, value, - cluster)
+
+ggplot(graph.data, aes(variable, value)) +   
+  geom_bar(aes(fill = as.factor(cluster)), position = "dodge", stat="identity") +
+  labs(x = "Category", y = "Average Number of AP Classes") +
+  ggtitle("AP Classes by Cluster") + 
+  guides(fill=guide_legend(title="Cluster")) + 
+  scale_fill_brewer(palette="GnBu") +
+  theme(axis.text=element_text(size=30, face="bold"),
+        axis.title=element_text(size=22,face="bold"),
+        plot.title = element_text(size = 40, face = "bold"),
+        legend.text = element_text(size=24),
+        legend.title =element_text(size=22,face="bold") )
 
 
 
 # LOGISTIC REGRESSION -------------------------------
 # RANDOM FORREST -------------------------------
 # DECISION TREE -------------------------------
+
+mean(subset$average.sum.sat)
+mean(subset$Average.Score..SAT.Math.)
+mean(subset$Average.Score..SAT.Reading.)
+mean(subset$Average.Score..SAT.Writing.)
