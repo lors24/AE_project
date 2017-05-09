@@ -1,6 +1,6 @@
 #rm(list=ls())
 
-setwd("~/Dropbox (MIT)/MIT/Analytics Edge/Project")
+setwd("~/Dropbox (Personal)/MIT/15.071AnalyticsEdge/")
 
 #Libraries
 
