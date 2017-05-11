@@ -47,13 +47,11 @@ clean_text <- function(variable, words.remove = "school"){
     return(matrix)
 }
 
-
-
-
 #Notes:
 
 #1. Lat and long seem healthy (all values fall in the similar range)
 #2. All observations are from NY and are informed in the City and Zip code information
+#3. City is same as borough except for Queens which is subdivided
 
 #Clean data
 
@@ -73,11 +71,37 @@ scores <- scores %>%
            Percent.Other = round(pmax(100-aux,0),2),
            Start.Time = times(paste0(gsub(" AM", '', Start.Time),":00")),
            End.Time = times(paste0(gsub(" PM", '', End.Time),":00"))+.5,
+           before8 = as.numeric(Start.Time <= "8:00:00"),
+           before830 = as.numeric(Start.Time > "8:00:00" & Start.Time <= "8:30:00"),
+           after830 = as.numeric(Start.Time > "8:30:00"),
            Length.Aux = End.Time-Start.Time,
-           Length = round(hours(Length.Aux)+minutes(Length.Aux)/60,2)) %>%
-    select(-c(Phone.Number, State, aux, Length.Aux, Street.Address))
+           Length = round(hours(Length.Aux)+minutes(Length.Aux)/60,2),
+           SAT.Math = Average.Score..SAT.Math.,
+           SAT.Reading = Average.Score..SAT.Reading.,
+           SAT.Writing = Average.Score..SAT.Writing.,
+           SAT.Score = SAT.Math + SAT.Writing + SAT.Reading
+           ) %>%
+    select(-c(Building.Code, City, Phone.Number, State, aux, Length.Aux, Street.Address,
+              Average.Score..SAT.Math., Average.Score..SAT.Reading.,
+              Average.Score..SAT.Writing.))
 
 sum(complete.cases(scores))
+
+#SAT Scores by Borough
+ggplot(scores, aes(Borough, SAT.Score, fill = Borough))+geom_boxplot()+guides(fill = F)
+#ggplot(scores, aes(Borough, SAT.Math, fill = Borough))+geom_boxplot()+guides(fill = F)
+#ggplot(scores, aes(Borough, SAT.Writing, fill = Borough))+geom_boxplot()+guides(fill = F)
+#ggplot(scores, aes(Borough, SAT.Reading, fill = Borough))+geom_boxplot()+guides(fill = F)
+
+#Race
+
+ggplot(scores, aes(Percent.White, SAT.Score, color = Borough))+geom_point()
+ggplot(scores, aes(Percent.Black, SAT.Score, color = Borough))+geom_point()
+ggplot(scores, aes(Percent.Hispanic, SAT.Score, color = Borough))+geom_point()
+ggplot(scores, aes(Percent.Asian, SAT.Score, color = Borough))+geom_point()
+
+#Time at school
+ggplot(scores, aes(Length, SAT.Score))+geom_point()
 
 #borough has same information as Borough in scores
 #school names are identical for 338 records, the 97 remaining differ in capitalization, using articles, or other minor differences
@@ -124,7 +148,7 @@ directory <- directory %>%
     select(-c(dbn, boro, school_name, building_code, phone_number, fax_number,
               campus_name, 
               expgrade_span_min, expgrade_span_max, state_code, zip, city, school_accessibility_description,
-              website, primary_address_line_1, school_type,
+              website, primary_address_line_1, 
               se_services, start_time, end_time, ell_programs,
               priority01:priority10, Location.1))
 
@@ -291,3 +315,14 @@ program_number <- programs %>%
     spread(interest, number)
 
 program_number[is.na(program_number)] <- 0
+
+
+
+
+
+######
+
+aux <- clean_text(directory$overview_paragraph) 
+aux = removeSparseTerms(aux, 0.85)
+Aux = as.data.frame(as.matrix(aux))
+
