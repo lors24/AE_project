@@ -1,6 +1,6 @@
 #rm(list=ls())
 
-setwd("~/Dropbox (Personal)/MIT/15.071AnalyticsEdge/")
+setwd("~/Dropbox (MIT)/MIT/Analytics Edge/Project")
 
 #Libraries
 
@@ -17,7 +17,6 @@ library(stringr)
 #Read data
 
 scores <- read.csv("Data/scores.csv", as.is = T, na.strings=c("","NA"))
-#programs <- read.csv("Data/DOE_High_School_Programs_2014-2015.csv", as.is = T, header = T)
 directory <- read.csv("Data/DOE_High_School_Directory_2014-2015.csv", as.is = T)
 
 #Functions: 
@@ -87,22 +86,6 @@ scores <- scores %>%
 
 sum(complete.cases(scores))
 
-#SAT Scores by Borough
-ggplot(scores, aes(Borough, SAT.Score, fill = Borough))+geom_boxplot()+guides(fill = F)
-#ggplot(scores, aes(Borough, SAT.Math, fill = Borough))+geom_boxplot()+guides(fill = F)
-#ggplot(scores, aes(Borough, SAT.Writing, fill = Borough))+geom_boxplot()+guides(fill = F)
-#ggplot(scores, aes(Borough, SAT.Reading, fill = Borough))+geom_boxplot()+guides(fill = F)
-
-#Race
-
-ggplot(scores, aes(Percent.White, SAT.Score, color = Borough))+geom_point()
-ggplot(scores, aes(Percent.Black, SAT.Score, color = Borough))+geom_point()
-ggplot(scores, aes(Percent.Hispanic, SAT.Score, color = Borough))+geom_point()
-ggplot(scores, aes(Percent.Asian, SAT.Score, color = Borough))+geom_point()
-
-#Time at school
-ggplot(scores, aes(Length, SAT.Score))+geom_point()
-
 #borough has same information as Borough in scores
 #school names are identical for 338 records, the 97 remaining differ in capitalization, using articles, or other minor differences
 #zip is identical for all cases
@@ -119,12 +102,55 @@ ggplot(scores, aes(Length, SAT.Score))+geom_point()
 
 # Remove variables that apepar in both tables and create new variables for type of school
 
+#Program highlights
+aux <- clean_text(directory$program_highlights,
+                  c("student","students","now","school","include","includes","opportunity","program","programs",
+                    "class","classes","classroom","grade")) 
+aux = removeSparseTerms(aux, 0.85)
+Highlights = as.data.frame(as.matrix(aux))
+
+
+#Languages
+directory$language_classes <- gsub("\\s*\\([^\\)]+\\)","",as.character(directory$language_classes))
+aux <- clean_text(directory$language_classes, c("language","arts")) 
+#findFreqTerms(aux, lowfreq=50)
+aux = removeSparseTerms(aux, 0.90)
+languages = as.data.frame(as.matrix(aux))
+
+#Extracurricular activites
+aux <- clean_text(directory$extracurricular_activities, c("student", "students")) 
+#findFreqTerms(aux, lowfreq=50)
+aux = removeSparseTerms(aux, 0.90)
+extraCurricular = as.data.frame(as.matrix(aux))
+names(extraCurricular) <- paste(names(extraCurricular),"extraC",sep =".")
+
+#Sports male
+aux <- clean_text(directory$psal_sports_boys) 
+findFreqTerms(aux, lowfreq=50)
+aux = removeSparseTerms(aux, 0.90)
+sports_boys = as.data.frame(as.matrix(aux))
+sports_boys$indoor <-NULL
+sports_boys$outdoor <- NULL
+sports_boys$countri <- NULL
+names(sports_boys) <- paste(names(sports_boys),"boys",sep =".")
+
+#Sports female
+aux <- clean_text(directory$psal_sports_girls) 
+findFreqTerms(aux, lowfreq=50)
+aux = removeSparseTerms(aux, 0.90)
+sports_girls = as.data.frame(as.matrix(aux))
+sports_girls$countri <-NULL
+sports_girls$indoor <- NULL
+sports_girls$outdoor <- NULL
+names(sports_girls) <- paste(names(sports_girls),"girls",sep =".")
+
 directory <- directory %>%
     mutate(School.ID = dbn,
            accesible = ifelse(school_accessibility_description == "Functionally Accessible",1,0),
            bus = ifelse(bus == "N/A",0,1),
            subway = ifelse(subway == "N/A",0,1),
            school_years = ifelse(grade_span_min != "K", as.numeric(grade_span_max)-as.numeric(grade_span_min)+1, as.numeric(grade_span_max)),
+           #Type of school
            CTE = as.numeric(grepl("CTE",school_type)),
            same_gender = as.numeric(grepl("All-",school_type)),
            New_school = as.numeric(grepl("New",school_type)),
@@ -133,6 +159,31 @@ directory <- directory %>%
            P_tech = as.numeric(grepl("P-Tech", school_type)),
            ESL_dual = as.numeric(grepl(pattern = "Dual",x = directory$ell_programs)),
            ESL_transitional = as.numeric(grepl(pattern = "Transitional",x = directory$ell_programs)),
+           #Ap classes
+           apclass = tolower(gsub("\\s*\\([^\\)]+\\)","",as.character(advancedplacement_courses))),
+           apclass= gsub("n/a","",apclass),
+           ap_history = as.numeric(grepl("history",apclass)),
+           ap_english = as.numeric(grepl("english",apclass)),
+           ap_biology = as.numeric(grepl("biology",apclass)),
+           ap_chemistry = as.numeric(grepl("chemistry",apclass)),
+           ap_calculus = as.numeric(grepl("calculus",apclass)),
+           ap_art = as.numeric(grepl("art",apclass)),
+           ap_politics = as.numeric(grepl("politics", apclass)),
+           ap_spanish = as.numeric(grepl("spanish",apclass)),
+           ap_physics = as.numeric(grepl("physics",apclass)),
+           ap_environmental = as.numeric(grepl("environmental",apclass)),
+           ap_psychology = as.numeric(grepl("psychology",apclass)),
+           ap_statistics = as.numeric(grepl("statistics",apclass)),
+           num_ap = ifelse(nchar(apclass) != 0, str_count(apclass,',')+1,0),
+           #sports
+           sports = ifelse(nchar(psal_sports_boys) + nchar(psal_sports_girls) + nchar(psal_sports_coed)+nchar(school_sports)!= 0,1,0 ),
+           male_sports = ifelse(nchar(psal_sports_boys)!=0, str_count(psal_sports_boys,",")+1,0),
+           female_sports = ifelse(nchar(psal_sports_girls)!=0, str_count(psal_sports_girls,",")+1,0),
+           #uniform
+           uniform = as.numeric(grepl("uniform|dress|code", tolower(directory$addtl_info1))),
+           #community service
+           community.service = as.numeric(grepl("service", tolower(directory$addtl_info2))),
+           #partners
            partner_cbo = ifelse(nchar(partner_cbo)==0,0,1),
            partner_corporate = ifelse(nchar(partner_corporate)==0,0,1),
            partner_hospital = ifelse(nchar(partner_hospital)==0,0,1),
@@ -146,183 +197,58 @@ directory <- directory %>%
                         partner_financial + partner_highered
            ) %>%
     select(-c(dbn, boro, school_name, building_code, phone_number, fax_number,
-              campus_name, 
+              campus_name, overview_paragraph, online_ap_courses, online_language_courses,
               expgrade_span_min, expgrade_span_max, state_code, zip, city, school_accessibility_description,
-              website, primary_address_line_1, 
+              website, primary_address_line_1, school_sports, school_type,
               se_services, start_time, end_time, ell_programs,
-              priority01:priority10, Location.1))
+              priority01:priority10, Location.1, total_students, grade_span_min, grade_span_max,
+              advancedplacement_courses,apclass,
+              psal_sports_boys, psal_sports_girls, psal_sports_coed,
+              program_highlights, language_classes, extracurricular_activities, addtl_info1,
+              addtl_info2))
 
-#Extracurricular activites
-aux <- clean_text(directory$extracurricular_activities) 
-#findFreqTerms(aux, lowfreq=50)
-aux = removeSparseTerms(aux, 0.90)
-extraCurricular = as.data.frame(as.matrix(aux))
+directory <- cbind(directory,Highlights,languages,extraCurricular,sports_boys,sports_girls)
 
-#Languages
-directory$language_classes <- gsub("\\s*\\([^\\)]+\\)","",as.character(directory$language_classes))
-aux <- clean_text(directory$language_classes, c("language","arts")) 
-#findFreqTerms(aux, lowfreq=50)
-aux = removeSparseTerms(aux, 0.90)
-languages = as.data.frame(as.matrix(aux))
-
-#Advanced placement courses
-directory$advancedplacement_courses <- gsub("\\s*\\([^\\)]+\\)","",as.character(directory$advancedplacement_courses))
-aux <- clean_text(directory$advancedplacement_courses, c("language","arts")) 
-findFreqTerms(aux, lowfreq=50)
-aux = removeSparseTerms(aux, 0.90)
-ap_courses = as.data.frame(as.matrix(aux))
-
-directory <- directory %>%
-    mutate(
-        apclass = tolower(gsub("\\s*\\([^\\)]+\\)","",as.character(advancedplacement_courses))),
-        apclass= gsub("n/a","",apclass),
-        ap_history = as.numeric(grepl("history",apclass)),
-        ap_english = as.numeric(grepl("english",apclass)),
-        ap_biology = as.numeric(grepl("biology",apclass)),
-        ap_chemistry = as.numeric(grepl("chemistry",apclass)),
-        ap_calculus = as.numeric(grepl("calculus",apclass)),
-        ap_art = as.numeric(grepl("art",apclass)),
-        ap_politics = as.numeric(grepl("politics", apclass)),
-        ap_spanish = as.numeric(grepl("spanish",apclass)),
-        ap_physics = as.numeric(grepl("physics",apclass)),
-        ap_environmental = as.numeric(grepl("environmental",apclass)),
-        ap_psychology = as.numeric(grepl("psychology",apclass)),
-        ap_statistics = as.numeric(grepl("statistics",apclass)),
-        num_ap = ifelse(nchar(apclass) != 0, str_count(apclass,',')+1,0)
-    ) %>% select(-c(advancedplacement_courses,apclass))
-
-#Sports male
-aux <- clean_text(directory$psal_sports_boys) 
-findFreqTerms(aux, lowfreq=50)
-aux = removeSparseTerms(aux, 0.90)
-sports_men = as.data.frame(as.matrix(aux))
-sports_men$indoor <-NULL
-sports_men$outdoor <- NULL
-sports_men$countri <- NULL
-names(sports_men) <- paste(names(sports_men),"men",sep =".")
-
-#Sports female
-aux <- clean_text(directory$psal_sports_girls) 
-findFreqTerms(aux, lowfreq=50)
-aux = removeSparseTerms(aux, 0.90)
-sports_girls = as.data.frame(as.matrix(aux))
-sports_girls$countri <-NULL
-sports_girls$indoor <- NULL
-sports_girls$outdoor <- NULL
-names(sports_girls) <- paste(names(sports_girls),"girls",sep =".")
-
-directory <- directory %>%
-    mutate(sports = ifelse(nchar(psal_sports_boys) + nchar(psal_sports_girls) + nchar(psal_sports_coed)+nchar(school_sports)!= 0,1,0 ),
-           male_sports = ifelse(nchar(psal_sports_boys)!=0, str_count(psal_sports_boys,",")+1,0),
-           female_sports = ifelse(nchar(psal_sports_girls)!=0, str_count(psal_sports_girls,",")+1,0)
-           ) %>%
-    select(-c(psal_sports_boys, psal_sports_girls, psal_sports_coed))
-
-directory <- cbind(directory, languages,sports_men,sports_girls)
-
-data_clean <- scores %>%
+schools_NYC <- scores %>%
     left_join(directory,by = "School.ID")
 
-save(data_clean, file = "Data/data_clean.Rdata")
+save(schools_NYC, file = "Data/schools_NYC.Rdata")
 
-#####
+#####   GRAPHS     ######
 
+#SAT Scores by Borough
+ggplot(schools_NYC, aes(Borough, SAT.Score, fill = Borough))+geom_boxplot()+guides(fill = F)
+#ggplot(scores, aes(Borough, SAT.Math, fill = Borough))+geom_boxplot()+guides(fill = F)
+#ggplot(scores, aes(Borough, SAT.Writing, fill = Borough))+geom_boxplot()+guides(fill = F)
+#ggplot(scores, aes(Borough, SAT.Reading, fill = Borough))+geom_boxplot()+guides(fill = F)
 
+ggplot(schools_NYC, aes(Borough, Percent.Hispanic))+geom_boxplot()+guides(fill = F)
 
+#Race
 
+ggplot(schools_NYC, aes(Percent.White, SAT.Score, color = Borough))+geom_point()
+ggplot(schools_NYC, aes(Percent.Black, SAT.Score, color = Borough))+geom_point()
+ggplot(schools_NYC, aes(Percent.Hispanic, SAT.Score, color = Borough))+geom_point()
+ggplot(schools_NYC, aes(Percent.Asian, SAT.Score, color = Borough))+geom_point()
 
+#Time at school
+ggplot(schools_NYC, aes(Length, SAT.Score))+geom_point()
 
+# Ap courses
 
-######## MODELING ############
-#First model
-
-m <- lm(Average.Score..SAT.Math. ~ Percent.Black + Percent.Hispanic + Percent.Asian + Percent.White + Length, data = scores)
-
-#.6692 accuracy
-
-
-#MAP
-
-map <- get_map(location = c(min_lon,min_lat,max_lon,max_lat))
-
-max_lat <- max(scores$Latitude)
-min_lat <- min(scores$Latitude)
-max_lon <- max(scores$Longitude)
-min_lon <- min(scores$Longitude)
-
-mapPoints <- ggmap(map) +
-    geom_point(aes(x = scores$Longitude, y = scores$Latitude, color = (scores$Average.Score..SAT.Math.)), data = scores, alpha = .5)
-mapPoints
+ggplot(schools_NYC, aes(num_ap, SAT.Score))+geom_point()
+ggplot(schools_NYC, aes(ap_calculus, SAT.Math))+geom_boxplot()
+ggplot(schools_NYC, aes(as.factor(ap_physics), SAT.Math))+geom_boxplot()
+ggplot(schools_NYC, aes(as.factor(ap_biology), SAT.Math))+geom_boxplot()
 
 
 
 
 
-#New data
-new.data <- read.csv("Data/data_additional_variables.csv",as.is = T)
-
-new.data <- new.data %>%
-    left_join()
-
-
-
-
-data_additional_variables <- data_additional_variables[complete.cases(data_additional_variables$Average.Score..SAT.Math.), ]
-data_additional_variables <- data_additional_variables %>% 
-    rowwise() %>%
-    mutate(average.sum.sat = sum(Average.Score..SAT.Math.,Average.Score..SAT.Reading.,Average.Score..SAT.Writing., na.rm=TRUE))
-
-subset <- data_additional_variables %>%
-    select(Start.Time, End.Time, Student.Enrollment, Percent.Asian, Percent.White, Percent.Black,
-           Percent.Hispanic, Percent.Other, Percent.Tested, Average.Score..SAT.Math., Average.Score..SAT.Reading.,
-           Average.Score..SAT.Writing., bus, subway, same_gender, New_school, International_school, P_tech, num_ap,
-           ap_history, ap_calculus, ap_english, ap_spanish, ap_physics, ap_psych, ap_chem, ap_art, ap_politics, ap_bio,
-           ap_econ, number_programs, num_boy_sport, num_girl_sport, num_coed_sport, basket_boy, basket_girl, baseball_boy, 
-           softball_girl, track_boy, track_girl, xc_boy, soccer_boy, soccer_girl, volleyball_boy, volleyball_girl, tennis_boy,
-           tennis_girl, fotball_boy, average.sum.sat)
-
-
-
-
-#Extra curricular activites
-
-#directory$extracurricular_activities <- gsub("\\s*\\([^\\)]+\\)","",as.character(directory2$language_classes))
-extraCurricular <- clean_text(directory$extracurricular_activities)
-findFreqTerms(extraCurricular, lowfreq=25)
-s_extraCurricular = removeSparseTerms(extraCurricular, 0.75)
-text = as.data.frame(as.matrix(s_extraCurricular))
-
-tokenize_ngrams <- function(x, n=3) 
-    return(rownames(as.data.frame(unclass(textcnt(x,method="string",n=n)))))
-matrix <- DocumentTermMatrix(corpus,control=list(tokenize=tokenize_ngrams))
-
-#additional
-
-addInfo <- clean_text(directory$overview_paragraph)
-findFreqTerms(addInfo, lowfreq=50)
-aux = removeSparseTerms(addInfo, .75)
-text = as.data.frame(as.matrix(aux))
-
-
-#### PROGRAMS ####
-
-# Number of programs is accurate
-
-program_number <- programs %>%
-    filter(dbn != 'dbn') %>%
-    group_by(dbn, interest) %>%
-    summarise(number = n()) %>%
-    spread(interest, number)
-
-program_number[is.na(program_number)] <- 0
 
 
 
 
 
-######
 
-aux <- clean_text(directory$overview_paragraph) 
-aux = removeSparseTerms(aux, 0.85)
-Aux = as.data.frame(as.matrix(aux))
 
