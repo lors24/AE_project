@@ -4,15 +4,18 @@ library(caret)
 library(class)
 library(glmnet)
 library(rpart.plot)
-set.seed(123)
+
 
 load("/Users/kskatteboe/Dropbox (Personal)/MIT/15.071AnalyticsEdge/Data/data_clean.Rdata")
+load("Data/data_clean.Rdata")
+
 
 # CREATE TRAIN AND TEST -------------------------------
 data_clean <- data_clean[complete.cases(data_clean$Average.Score..SAT.Math.), ]
 data_clean <- data_clean %>% 
   rowwise() %>%
   mutate(average.sum.sat = sum(Average.Score..SAT.Math.,Average.Score..SAT.Reading.,Average.Score..SAT.Writing., na.rm=TRUE))
+
 
 subset <- data_clean %>%
   dplyr::select(-School.ID, -School.Name, -Building.Code, -City, -Latitude, - Longitude, - grade_span_max, -grade_span_min, -Length,
@@ -24,6 +27,7 @@ subset <- data_clean %>%
 subset$Average.Score..SAT.Math. <- NULL
 subset$Zip.Code <- NULL
 smp_size <- floor(0.60 * nrow(subset))
+
 train_ind <- sample(seq_len(nrow(subset)), size = smp_size)
 train <- subset[train_ind, ]
 temp <- subset[-train_ind, ]
@@ -106,6 +110,9 @@ validate$ss.tot <- (mean(validate$average.sum.sat) - validate$average.sum.sat)^2
 mean(validate$rmse.reg)
 r.2.reg.val <- 1 - sum(validate$rmse.reg)/sum(validate$ss.tot)
 r.2.reg.val
+
+
+
 # DECISION TREE -------------------------------
 fit <- rpart(average.sum.sat ~ .,
              data=train,

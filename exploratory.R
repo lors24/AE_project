@@ -12,6 +12,13 @@ library(SnowballC)
 library(tau)
 library(tidyr)
 library(stringr)
+library(readr)
+library(caret)
+library(class)
+library(klaR)
+library("RColorBrewer")
+library(psych)
+library(corrplot)
 
 
 #Read data
@@ -46,6 +53,53 @@ clean_text <- function(variable, words.remove = "school"){
     return(matrix)
 }
 
+
+# Multiple plot function
+#
+# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
+# - cols:   Number of columns in layout
+# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
+#
+# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
+# then plot 1 will go in the upper left, 2 will go in the upper right, and
+# 3 will go all the way across the bottom.
+#
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+    require(grid)
+    
+    # Make a list from the ... arguments and plotlist
+    plots <- c(list(...), plotlist)
+    
+    numPlots = length(plots)
+    
+    # If layout is NULL, then use 'cols' to determine layout
+    if (is.null(layout)) {
+        # Make the panel
+        # ncol: Number of columns of plots
+        # nrow: Number of rows needed, calculated from # of cols
+        layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                         ncol = cols, nrow = ceiling(numPlots/cols))
+    }
+    
+    if (numPlots==1) {
+        print(plots[[1]])
+        
+    } else {
+        # Set up the page
+        grid.newpage()
+        pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+        
+        # Make each plot, in the correct location
+        for (i in 1:numPlots) {
+            # Get the i,j matrix positions of the regions that contain this subplot
+            matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+            
+            print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                            layout.pos.col = matchidx$col))
+        }
+    }
+}
+
 #Notes:
 
 #1. Lat and long seem healthy (all values fall in the similar range)
@@ -70,9 +124,6 @@ scores <- scores %>%
            Percent.Other = round(pmax(100-aux,0),2),
            Start.Time = times(paste0(gsub(" AM", '', Start.Time),":00")),
            End.Time = times(paste0(gsub(" PM", '', End.Time),":00"))+.5,
-           before8 = as.numeric(Start.Time <= "8:00:00"),
-           before830 = as.numeric(Start.Time > "8:00:00" & Start.Time <= "8:30:00"),
-           after830 = as.numeric(Start.Time > "8:30:00"),
            Length.Aux = End.Time-Start.Time,
            Length = round(hours(Length.Aux)+minutes(Length.Aux)/60,2),
            SAT.Math = Average.Score..SAT.Math.,
@@ -83,6 +134,11 @@ scores <- scores %>%
     select(-c(Building.Code, City, Phone.Number, State, aux, Length.Aux, Street.Address,
               Average.Score..SAT.Math., Average.Score..SAT.Reading.,
               Average.Score..SAT.Writing.))
+
+scores$start.hour <- 2
+scores[scores$Start.Time<="8:00:00", "start.hour"] <- 1
+scores[scores$Start.Time>"8:30:00","start.hour"] <- 3
+scores$start.hour <- as.factor(scores$start.hour)
 
 sum(complete.cases(scores))
 
@@ -216,20 +272,46 @@ save(schools_NYC, file = "Data/schools_NYC.Rdata")
 
 #####   GRAPHS     ######
 
+SAT.scores <- schools_NYC %>%
+    select(School.ID,SAT.Math, SAT.Reading, SAT.Writing) %>%
+    gather(SAT, Score, -School.ID)
+
+ggplot(SAT.scores, aes(SAT, Score, fill = SAT))+geom_boxplot()+guides(fill = F)+scale_fill_brewer(palette="Paired")+
+    ggtitle("SAT Scores distribution by section") + xlab("Section")
+
+ggplot(schools_NYC, aes(1,SAT.Score))+geom_boxplot(fill= "light blue")+
+    ggtitle("SAT Scores distribution") + xlab("")
+
+
 #SAT Scores by Borough
-ggplot(schools_NYC, aes(Borough, SAT.Score, fill = Borough))+geom_boxplot()+guides(fill = F)
+ggplot(schools_NYC, aes(Borough, SAT.Score, fill = Borough))+geom_boxplot()+guides(fill = F)+scale_fill_brewer(palette="Paired")+
+    ggtitle("SAT Scores distribution by Borough") + ylab("SAT Score")
+
 #ggplot(scores, aes(Borough, SAT.Math, fill = Borough))+geom_boxplot()+guides(fill = F)
 #ggplot(scores, aes(Borough, SAT.Writing, fill = Borough))+geom_boxplot()+guides(fill = F)
 #ggplot(scores, aes(Borough, SAT.Reading, fill = Borough))+geom_boxplot()+guides(fill = F)
+
+
 
 ggplot(schools_NYC, aes(Borough, Percent.Hispanic))+geom_boxplot()+guides(fill = F)
 
 #Race
 
-ggplot(schools_NYC, aes(Percent.White, SAT.Score, color = Borough))+geom_point()
-ggplot(schools_NYC, aes(Percent.Black, SAT.Score, color = Borough))+geom_point()
-ggplot(schools_NYC, aes(Percent.Hispanic, SAT.Score, color = Borough))+geom_point()
-ggplot(schools_NYC, aes(Percent.Asian, SAT.Score, color = Borough))+geom_point()
+SAT.race <- schools_NYC %>%
+    select(Borough, Percent.White, Percent.Black, Percent.Asian, Percent.Hispanic, SAT.Score) %>%
+    gather(Race, Percent, -c(Borough,SAT.Score))
+
+ggplot(SAT.race, aes(Percent, SAT.Score, color = Borough))+
+    geom_point()+scale_colour_brewer(palette="Paired")+facet_wrap(SAT.Score~Race)
+
+p1 <- ggplot(schools_NYC, aes(Percent.White, SAT.Score, color = Borough))+geom_point()+scale_colour_brewer(palette="Paired")+xlab("Percent White") + ylab("SAT Score") 
+p2 <- ggplot(schools_NYC, aes(Percent.Black, SAT.Score, color = Borough))+geom_point()+scale_colour_brewer(palette="Paired")+xlab("Percent Black") + ylab("SAT Score") 
+p3 <- ggplot(schools_NYC, aes(Percent.Hispanic, SAT.Score, color = Borough))+geom_point()+scale_colour_brewer(palette="Paired")+xlab("Percent Hispanic") + ylab("SAT Score") 
+p4 <- ggplot(schools_NYC, aes(Percent.Asian, SAT.Score, color = Borough))+geom_point()+scale_colour_brewer(palette="Paired")+xlab("Percent Asian") + ylab("SAT Score") 
+
+p1 <- ggplot(schools_NYC, aes(Percent.White, SAT.Score, color = Borough))+geom_point()+scale_colour_brewer(palette="Paired")+xlab("Percent White") + ylab("SAT Score") 
+
+
 
 #Time at school
 ggplot(schools_NYC, aes(Length, SAT.Score))+geom_point()
@@ -240,6 +322,20 @@ ggplot(schools_NYC, aes(num_ap, SAT.Score))+geom_point()
 ggplot(schools_NYC, aes(ap_calculus, SAT.Math))+geom_boxplot()
 ggplot(schools_NYC, aes(as.factor(ap_physics), SAT.Math))+geom_boxplot()
 ggplot(schools_NYC, aes(as.factor(ap_biology), SAT.Math))+geom_boxplot()
+
+
+# PRELIMINARY ANALYSIS -------------------------------
+
+hist.data <- schools_NYC %>% select(SAT.Score, SAT.Math, SAT.Reading, SAT.Writing,
+                                    Student.Enrollment, Percent.White, Percent.Black, 
+                                  Percent.Hispanic, Percent.Asian, Percent.Tested)
+M <- cor(hist.data)
+corrplot(M, type = "upper", tl.pos = "td",
+         method = "square", tl.cex = 0.5, tl.col = 'black', diag = FALSE)                      
+
+vars <- schools_NYC %>% select(Student.Enrollment, Percent.Tested, num_ap, Length)
+multi.hist(vars)
+
 
 
 
